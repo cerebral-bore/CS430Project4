@@ -390,72 +390,61 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
 	int testpixel = 0;
 	for (int y = 0; y < N; y += 1) {
 		for (int x = 0; x < M; x += 1) {
-		  double Ro[3] = { 0, 0, 0 };
-		  double Rd[3] = {
-			cx - (w / 2) + pixwidth * (x + 0.5),
-			cy - (h / 2) + pixheight * (y + 0.5),
-			1
-		  };
-		  double best_t;
-		  int best_obj;
-		  shoot_ray(scene, num_objects, Ro, Rd, &best_t, &best_obj);
+			double Ro[3] = { 0, 0, 0 };
+			double Rd[3] = {
+				cx - (w / 2) + pixwidth * (x + 0.5),
+				cy - (h / 2) + pixheight * (y + 0.5), 1 };
+			double best_t;
+			int best_obj;
+			shoot_ray(scene, num_objects, Ro, Rd, &best_t, &best_obj);
+			
+			Pixel pix;
+			if (best_t > 0 && best_t != INFINITY) {
+				double color[3];
 
-		
-		  Pixel pix;
-		  if (best_t > 0 && best_t != INFINITY) {
-			double color[3];
+				color[0] = 0;
+				color[1] = 0;
+				color[2] = 0;
 
-			color[0] = 0;
-			color[1] = 0;
-			color[2] = 0;
+				shade_rec(scene, num_objects, best_t, best_obj, Ro, Rd, color, 1);
 
-			shade_rec(scene, num_objects, best_t, best_obj, Ro, Rd, color, 1);
+				pix.r = (unsigned char)clamp(color[0]*255);
+				pix.g = (unsigned char)clamp(color[1]*255);
+				pix.b = (unsigned char)clamp(color[2]*255);
+			} else {
+				pix.r = (unsigned char)clamp(0.1);
+				pix.g = (unsigned char)clamp(0.1);
+				pix.b = (unsigned char)clamp(0.1);
+			}
 
-			pix.r = (unsigned char)clamp(color[0]*255);
-			pix.g = (unsigned char)clamp(color[1]*255);
-			pix.b = (unsigned char)clamp(color[2]*255);
-		  }
-		  else {
-			pix.r = (unsigned char)clamp(0.1);
-			pix.g = (unsigned char)clamp(0.1);
-			pix.b = (unsigned char)clamp(0.1);
-		  }
-
-		  buffer[current_pixel++] = pix;
-
+			buffer[current_pixel++] = pix;
 		}
-  }
-
-  return 0;
+	}
+	return 0;
 }
 
 int ppm_output(Pixel *buffer, char *output_file_name, int size, int depth, int width, int height){
-  printf("\nppm_output entered\n");
-  FILE *output_file;
-  output_file = fopen(output_file_name, "w");
-  if (!output_file)
-  {
-    fprintf(stderr, "\nError: Could not open file for write.");
-    fclose(output_file);
-    exit(1);
-  }
-
-  else {
-    fprintf(output_file, "P3\n%d %d\n%d\n", width, height, depth);
-      for (int i = width-1; i >=0; i--)
-      {
-        for (int j = 0; j<height; j++)
-        {
-          fprintf(output_file, "%d ", buffer[(i*width)+j].r);
-          fprintf(output_file, "%d ", buffer[(i*width)+j].g);
-          fprintf(output_file, "%d ", buffer[(i*width)+j].b);
-        }
-        fprintf(output_file, "\n");
-      }
-  }
+	printf("\nppm_output entered\n");
+	FILE *output_file;
+	output_file = fopen(output_file_name, "w");
+	if (!output_file){
+		fprintf(stderr, "\nError: Could not open file for write.");
+		fclose(output_file);
+		exit(1);
+	} else {
+		fprintf(output_file, "P3\n%d %d\n%d\n", width, height, depth);
+		for (int i = width-1; i >=0; i--){
+			for (int j = 0; j<height; j++){
+				fprintf(output_file, "%d ", buffer[(i*width)+j].r);
+				fprintf(output_file, "%d ", buffer[(i*width)+j].g);
+				fprintf(output_file, "%d ", buffer[(i*width)+j].b);
+			}
+		fprintf(output_file, "\n");
+		}
+	}
   
-  fclose(output_file);
-  return 0;
+	fclose(output_file);
+	return 0;
 }
 
 // Error checking function to minimize code in main()
@@ -494,279 +483,265 @@ int errCheck(int args, char *argv[]){
 
 
 double* next_vector(FILE* json){
-  double* v = malloc(3 * sizeof(double));
-  expect_c(json, '[');
-  skip_ws(json);
-  v[0] = next_number(json);
-  skip_ws(json);
-  expect_c(json, ',');
-  skip_ws(json);
-  v[1] = next_number(json);
-  skip_ws(json);
-  expect_c(json, ',');
-  skip_ws(json);
-  v[2] = next_number(json);
-  skip_ws(json);
-  expect_c(json, ']');
-  return v;
+	double* v = malloc(3 * sizeof(double));
+	expect_c(json, '[');
+	skip_ws(json);
+	v[0] = next_number(json);
+	skip_ws(json);
+	expect_c(json, ',');
+	skip_ws(json);
+	v[1] = next_number(json);
+	skip_ws(json);
+	expect_c(json, ',');
+	skip_ws(json);
+	v[2] = next_number(json);
+	skip_ws(json);
+	expect_c(json, ']');
+	return v;
 }
+
 double next_number(FILE* json){
-  double value;
-  fscanf(json, "%lf", &value);
-  return value;
+	double value;
+	fscanf(json, "%lf", &value);
+	return value;
 }
+
 char* next_string(FILE* json){
-  char buffer[129];
-  int c = next_c(json);
-  if (c != '"') {
-    fprintf(stderr, "Error: Expected string");
-    exit(1);
-  }
-  c = next_c(json);
-  int i = 0;
-  while (c != '"') {
-    if (i >= 128) {
-      fprintf(stderr, "Error: Strings longer than 128 characters in length are not supported.\n");
-      exit(1);
-    }
-    if (c == '\\') {
-      fprintf(stderr, "Error: Strings with escape codes are not supported.\n");
-      exit(1);
-    }
-    if (c < 32 || c > 126) {
-      fprintf(stderr, "Error: Strings may contain only ascii characters.\n");
-      exit(1);
-    }
-    buffer[i] = c;
-    i += 1;
-    c = next_c(json);
-  }
-  buffer[i] = 0;
-  return strdup(buffer);
+	char buffer[129];
+	int c = next_c(json);
+	if (c != '"') {
+		fprintf(stderr, "Error: Expected string");
+		exit(1);
+	}
+	c = next_c(json);
+	int i = 0;
+	while (c != '"') {
+		if (i >= 128) {
+			fprintf(stderr, "Error: Strings longer than 128 characters in length are not supported.\n");
+			exit(1);
+		}
+		if (c == '\\') {
+			fprintf(stderr, "Error: Strings with escape codes are not supported.\n");
+			exit(1);
+		}
+		if (c < 32 || c > 126) {
+			fprintf(stderr, "Error: Strings may contain only ascii characters.\n");
+			exit(1);
+		}
+		buffer[i] = c;
+		i += 1;
+		c = next_c(json);
+	}
+	buffer[i] = 0;
+	return strdup(buffer);
 }
+
 void skip_ws(FILE* json){
-  int c = next_c(json);
-  while (isspace(c)) {
-    c = next_c(json);
-  }
-  ungetc(c, json);
+	int c = next_c(json);
+	while (isspace(c)) {
+		c = next_c(json);
+	}
+	ungetc(c, json);
 }
+
 void expect_c(FILE* json, int d){
-  int c = next_c(json);
-  if (c == d) return;
-  fprintf(stderr, "Error: Expected '%c'");
-  exit(1);
+	int c = next_c(json);
+	if (c == d){ return; }
+	fprintf(stderr, "Error: Expected '%c'");
+	exit(1);
 }
+
 int next_c(FILE* json){
-  int c = fgetc(json);
-#ifdef DEBUG
-  printf("next_c: '%c'\n", c);
-#endif
-  if (c == EOF) {
-    fprintf(stderr, "Error: Unexpected end of file");
-    exit(1);
-  }
-  return c;
+	int c = fgetc(json);
+	if (c == EOF) {
+		fprintf(stderr, "Error: Unexpected end of file");
+		exit(1);
+	}
+	return c;
 }
 
 
 double sphere_intersection(double* Ro, double* Rd, double* C, double r){
-  double a = (sqr(Rd[0]) + sqr(Rd[1]) + sqr(Rd[2]));
-  double b = (2 * (Ro[0] * Rd[0] - Rd[0] * C[0] + Ro[1] * Rd[1] - Rd[1] * C[1] + Ro[2] * Rd[2] - Rd[2] * C[2]));
-  double c = sqr(Ro[0]) - 2 * Ro[0] * C[0] + sqr(C[0]) + sqr(Ro[1]) - 2 * Ro[1] * C[1] + sqr(C[1]) + sqr(Ro[2]) - 2 * Ro[2] * C[2] + sqr(C[2]) - sqr(r);
+	double a = (sqr(Rd[0]) + sqr(Rd[1]) + sqr(Rd[2]));
+	double b = (2 * (Ro[0] * Rd[0] - Rd[0] * C[0] + Ro[1] * Rd[1] - Rd[1] * C[1] + Ro[2] * Rd[2] - Rd[2] * C[2]));
+	double c = sqr(Ro[0]) - 2 * Ro[0] * C[0] + sqr(C[0]) + sqr(Ro[1]) - 2 * Ro[1] * C[1] + sqr(C[1]) + sqr(Ro[2]) - 2 * Ro[2] * C[2] + sqr(C[2]) - sqr(r);
 
-  double det = sqr(b) - 4 * a * c;
-  if (det <= 0) return -1;
+	double det = sqr(b) - 4 * a * c;
+	if (det <= 0){ return -1; }
 
-  det = sqrt(det);
+	det = sqrt(det);
+	
+	double t0 = (-b - det) / (2 * a);
+	if (t0 > 0){ return t0; }
 
-  double t0 = (-b - det) / (2 * a);
-  if (t0 > 0) return t0;
+	double t1 = (-b + det) / (2 * a);
+	if (t1 > 0){ return t1; }
 
-  double t1 = (-b + det) / (2 * a);
-  if (t1 > 0) return t1;
-
-  return -1;
+	return -1;
 }
 
 double plane_intersection(double* Ro, double* Rd, double* c, double *n){
-  v3_normalize(n);
-  v3_normalize(Rd);
-  double d = -(v3_dot(c, n));
-  double e = v3_dot(Ro, n);
-  double f = v3_dot(Rd, n);
+	v3_normalize(n);
+	v3_normalize(Rd);
+	double d = -(v3_dot(c, n));
+	double e = v3_dot(Ro, n);
+	double f = v3_dot(Rd, n);
 
-  double t = -(e + d)/f;
-  if (t > 0){
-    return t;
-  }
+	double t = -(e + d)/f;
+  if (t > 0){ return t; }
   return -1;
 }
 
 void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t, int *o){
-  v3_normalize(Rd);
+	v3_normalize(Rd);
 
-  double best_t = INFINITY;
-  int best_obj = 0;
-  for (int i = 1; i < num_objects; i += 1) {
-    double t = 0;
+	double best_t = INFINITY;
+	int best_obj = 0;
+	for (int i = 1; i < num_objects; i += 1) {
+		double t = 0;
 
-    switch (scene[i].kind) {
-    case 1:
-      t = sphere_intersection(Ro, Rd, scene[i].sphere.center, scene[i].sphere.radius);
-      break;
-    case 2:
-      t = plane_intersection(Ro, Rd, scene[i].plane.center, scene[i].plane.normal);
-      break;
-    case 4:
-      break;
-    default:
-      fprintf(stderr, "Error: Unrecognized object in scene\n");
-      exit(1);
-    }
+		switch (scene[i].kind) {
+		case 1:
+			t = sphere_intersection(Ro, Rd, scene[i].sphere.center, scene[i].sphere.radius);
+			break;
+		case 2:
+			t = plane_intersection(Ro, Rd, scene[i].plane.center, scene[i].plane.normal);
+			break;
+		case 4:
+			break;
+		default:
+			fprintf(stderr, "Error: Unrecognized object in scene\n");
+			exit(1);
+		}
 
-    if (t > 0 && t < best_t){
-      best_t = t;
-      best_obj = i;
-    }
-  }
-  *t = best_t;
-  *o = best_obj;
+		if (t > 0 && t < best_t){
+			best_t = t;
+			best_obj = i;
+		}
+	}
+	*t = best_t;
+	*o = best_obj;
 }
 
 void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o){
-  v3_normalize(Rd);
+	v3_normalize(Rd);
 
-  double best_t_shadow = INFINITY;
-  int best_obj_shadow = 0;
-  for (int k=1; k < num_objects ; k += 1){
-    if (k != best_obj){
-      double t_shadow = 0;
-      switch(scene[k].kind){
-      case 1:
-        t_shadow = sphere_intersection(Ro, Rd, scene[k].sphere.center, scene[k].sphere.radius);
-        break;
-      case 2:
-        t_shadow = plane_intersection(Ro, Rd, scene[k].plane.center, scene[k].plane.normal);
-        break;
-      case 4:
-        break;                
-      default:
-        fprintf(stderr, "Error: Unrecognized object in scene when looking for shadow\n");
-        exit(1);
-      }
-
-      if (t_shadow > 0 && t_shadow < best_t_shadow){
-        best_t_shadow = t_shadow;
-        best_obj_shadow = k;
-      }
-
-    }
-  }
-  *t = best_t_shadow;
-  *o = best_obj_shadow;
+	double best_t_shadow = INFINITY;
+	int best_obj_shadow = 0;
+	for (int k=1; k < num_objects ; k += 1){
+		if (k != best_obj){
+			double t_shadow = 0;
+			switch(scene[k].kind){
+			case 1:
+				t_shadow = sphere_intersection(Ro, Rd, scene[k].sphere.center, scene[k].sphere.radius);
+				break;
+			case 2:
+				t_shadow = plane_intersection(Ro, Rd, scene[k].plane.center, scene[k].plane.normal);
+				break;
+			case 4:
+				break;                
+			default:
+				fprintf(stderr, "Error: Unrecognized object in scene when looking for shadow\n");
+				exit(1);
+			}
+			
+			if (t_shadow > 0 && t_shadow < best_t_shadow){
+				best_t_shadow = t_shadow;
+				best_obj_shadow = k;
+			}
+		}
+	}
+	*t = best_t_shadow;
+	*o = best_obj_shadow;
 }
 
 void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level){
 
-  for (int i = 1; i < num_objects; i += 1) {
-    if(scene[i].kind != 4) 
-      continue;
-    double Ron[3];
-    double Rdn[3];
-    double Ron_temp[3];
+	for (int i = 1; i < num_objects; i += 1) {
+		if(scene[i].kind != 4){ continue; }
+		double Ron[3];
+		double Rdn[3];
+		double Ron_temp[3];
 
-    v3_scale(Rd, best_t, Ron_temp);
-    v3_add(Ron_temp, Ro, Ron);
-    v3_sub(scene[i].light.center, Ron, Rdn);
+		v3_scale(Rd, best_t, Ron_temp);
+		v3_add(Ron_temp, Ro, Ron);
+		v3_sub(scene[i].light.center, Ron, Rdn);
 
-    double B[3];
-    v3_sub(scene[i].light.center, Ron, B);
-    double dist = v3_mag(B);
+		double B[3];
+		v3_sub(scene[i].light.center, Ron, B);
+		double dist = v3_mag(B);
 
+		double best_t_shadow;
+		int best_obj_shadow;
+		shoot_ray_shadow(scene, num_objects, best_obj, Ron, Rdn, &best_t_shadow, &best_obj_shadow);
 
+		if (best_t_shadow > 0 && best_t_shadow != INFINITY && best_t_shadow < dist ) { /* Do Nothing */ 
+		} else {
+			double N[3], L[3], R[3], V[3];
 
-    double best_t_shadow;
-    int best_obj_shadow;
-    shoot_ray_shadow(scene, num_objects, best_obj, Ron, Rdn, &best_t_shadow, &best_obj_shadow);
+			if(scene[best_obj].kind == 2){
+				memcpy(N, scene[best_obj].plane.normal, sizeof(double)*3); // if plane
+			} else { v3_sub(Ron, scene[best_obj].sphere.center, N); }
+			v3_normalize(N);
 
-    if (best_t_shadow > 0 && best_t_shadow != INFINITY && best_t_shadow < dist ) {
-    }
-    else{
-      double N[3], L[3], R[3], V[3];
+			v3_sub(scene[i].light.center, Ron, L);
+			v3_normalize(L);
 
-      if(scene[best_obj].kind == 2)
-        memcpy(N, scene[best_obj].plane.normal, sizeof(double)*3); // if plane
-      else
-        v3_sub(Ron, scene[best_obj].sphere.center, N);
-      v3_normalize(N);
+			v3_reflect(L, N, R);
 
-      v3_sub(scene[i].light.center, Ron, L);
-      v3_normalize(L);
+			memcpy(V, Rd, sizeof(double)*3);
+			v3_scale(V, -1.0, V);
+			v3_normalize(V);
 
-      v3_reflect(L, N, R);
+			double diff_nl = v3_dot(N, L);
+			double diff[3];
+			diff[0] = scene[best_obj].diffuse_color[0]*scene[i].light.color[0];
+			diff[1] = scene[best_obj].diffuse_color[1]*scene[i].light.color[1];
+			diff[2] = scene[best_obj].diffuse_color[2]*scene[i].light.color[2];
+			v3_scale(diff, diff_nl, diff);  
 
-      memcpy(V, Rd, sizeof(double)*3);
-      v3_scale(V, -1.0, V);
-      v3_normalize(V);
+			double spec_vr = -1*v3_dot(V, R);
+			double spec[3];
+			if(spec_vr > 0){
+				spec[0] = (scene[best_obj].specular_color[0]*scene[i].light.color[0]*pow(spec_vr, 20));
+				spec[1] = (scene[best_obj].specular_color[1]*scene[i].light.color[1]*pow(spec_vr, 20));
+				spec[2] = (scene[best_obj].specular_color[2]*scene[i].light.color[2]*pow(spec_vr, 20));
+			} else {
+				spec[0] = 0;
+				spec[1] = 0;
+				spec[2] = 0;
+			}
 
-      double diff_nl = v3_dot(N, L);
-      double diff[3];
-        diff[0] = scene[best_obj].diffuse_color[0]*scene[i].light.color[0];
-        diff[1] = scene[best_obj].diffuse_color[1]*scene[i].light.color[1];
-        diff[2] = scene[best_obj].diffuse_color[2]*scene[i].light.color[2];
-        v3_scale(diff, diff_nl, diff);  
+			double rad_a = frad(scene[i].light.radial_a0, scene[i].light.radial_a1, scene[i].light.radial_a2, dist);
+			double ang_a;
+			if(scene[i].light.theta != 0){
+				ang_a = fang(Rd, scene[i].light.direction, scene[i].light.theta * M_PI / 180.0, scene[i].light.angular_a0);
+			} else { ang_a = 1; }
 
-      double spec_vr = -1*v3_dot(V, R);
-      double spec[3];
-      if(spec_vr > 0){
-        spec[0] = (scene[best_obj].specular_color[0]*scene[i].light.color[0]*pow(spec_vr, 20));
-        spec[1] = (scene[best_obj].specular_color[1]*scene[i].light.color[1]*pow(spec_vr, 20));
-        spec[2] = (scene[best_obj].specular_color[2]*scene[i].light.color[2]*pow(spec_vr, 20));
-      }
-      else {
-        spec[0] = 0;
-        spec[1] = 0;
-        spec[2] = 0;
-      }
+			color[0] += rad_a * ang_a * (diff[0] + spec[0]);
+			color[1] += rad_a * ang_a * (diff[1] + spec[1]);
+			color[2] += rad_a * ang_a * (diff[2] + spec[2]);
 
-      double rad_a = frad(scene[i].light.radial_a0, scene[i].light.radial_a1, scene[i].light.radial_a2, dist);
-      double ang_a;
-      if(scene[i].light.theta != 0){
-        ang_a = fang(Rd, scene[i].light.direction, scene[i].light.theta * M_PI / 180.0, scene[i].light.angular_a0);
-      }
-      else
-        ang_a = 1;
+			if (level < 2) {
+			
+				if(scene[best_obj].reflectivity > 0){
+					double refl_ray[3];
+					v3_reflect(Rd, N, refl_ray);
+					double rec_t = INFINITY;
 
-	  color[0] += rad_a * ang_a * (diff[0] + spec[0]);
-      color[1] += rad_a * ang_a * (diff[1] + spec[1]);
-      color[2] += rad_a * ang_a * (diff[2] + spec[2]);
+					int rec_obj;
+					shoot_ray(scene, num_objects, Ron, refl_ray, &rec_t, &rec_obj);
 
-      if (level < 2) {
-        
-        if(scene[best_obj].reflectivity > 0){
-          double refl_ray[3];
-          v3_reflect(Rd, N, refl_ray);
-          double rec_t = INFINITY;
+					double refl_color[3] = {0, 0, 0};
+			  
+					if (rec_t != INFINITY){ shade_rec(scene, num_objects, rec_t, rec_obj, Ron, refl_ray, refl_color, level + 1); }
 
+					v3_scale(refl_color, scene[best_obj].reflectivity, refl_color);
 
-          int rec_obj;
-          shoot_ray(scene, num_objects, Ron, refl_ray, &rec_t, &rec_obj);
-
-
-          double refl_color[3] = {0, 0, 0};
-          
-          
-          if (rec_t != INFINITY) shade_rec(scene, num_objects, rec_t, rec_obj, Ron, refl_ray, refl_color, level + 1);
-
-          v3_scale(refl_color, scene[best_obj].reflectivity, refl_color);
-
-          v3_add(refl_color, color, color);
-        }
-        if(scene[best_obj].refractivity > 0){
-
-        }
-      }
-    }
-  }
+					v3_add(refl_color, color, color);
+				}
+				if(scene[best_obj].refractivity > 0){/* Do Nothing */}
+			}
+		}
+	}
 }
