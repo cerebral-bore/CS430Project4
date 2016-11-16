@@ -15,9 +15,6 @@
 #include <math.h>
 #include <ctype.h>
 
-//MACROS CONSIDER DELETEING
-#define degrees_to_rad(degrees) (degrees * M_PI / 180.0)
-
 // Struct and function declarations
 
 typedef struct Object{
@@ -64,12 +61,10 @@ typedef struct Pixel{
 } Pixel;
 
 typedef Object Scene[128];
-//Main method prototypes
 int read_scene(char* json, Scene scene);
 int raycast (Pixel *buffer, Scene scene, int num_objects, int width, int height);
 int ppm_output(Pixel  *buffer, char *output_file_name, int size, int depth, int width, int height);
 
-//Parser prototypes
 double* next_vector(FILE* json);
 double next_number(FILE* json);
 char* next_string(FILE* json);
@@ -77,7 +72,6 @@ void skip_ws(FILE* json);
 void expect_c(FILE* json, int d);
 int next_c(FILE* json);
 
-//Intersect prototypes and methods
 double sphere_intersection(double* Ro, double* Rd, double* C, double r);
 double plane_intersection(double* Ro, double* Rd, double* c, double *n);
 static inline double sqr(double v) {
@@ -88,7 +82,7 @@ void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t
 void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o);
 void shade_rec(Object *sceneRef, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level);
 
-
+// Vector math methods
 typedef double* V3;
 
 static inline void v3_add(V3 a, V3 b, V3 c){
@@ -168,11 +162,6 @@ static inline double fang(V3 Rd, V3 Ld, double theta, double a0){
   }
 }
 
-static inline double deg_to_rad(double deg){
-  double d = deg * M_PI / 180.0;
-  return d;
-} 
-
 int errCheck(int argc, char *argv[]);
 
 int main(int argc, char* argv[]){
@@ -198,259 +187,243 @@ int main(int argc, char* argv[]){
 }
 
 int read_scene(char* json_input, Scene scene){
-  int c;
-  FILE* json = fopen(json_input, "r");
-  if (json == NULL) {
-    fprintf(stderr, "Error: Could not open file \"%s\"\n", json);
-    exit(1);
-  }
+	int c;
+	FILE* json = fopen(json_input, "r");
+	if (json == NULL) {
+		fprintf(stderr, "Error: Could not open file \"%s\"\n", json);
+		exit(1);
+	}
 
-  skip_ws(json);
+	skip_ws(json);
 
-  // Find the beginning of the list
-  expect_c(json, '[');
-  skip_ws(json);
+	// Find the beginning of the list
+	expect_c(json, '[');
+	skip_ws(json);
 
-  // Find the objects
+	// Find the objects
 
-  int obj_num = 0;
-  while (1) {
-    int c = fgetc(json);
-    if (c == ']') {
-      fprintf(stderr, "Error: This is the worst scene file EVER.\n");
-      fclose(json);
-      return -1;
-    }
-    if (c == '{') {
-      skip_ws(json);
+	int obj_num = 0;
+	while (1) {
+		int c = fgetc(json);
+		if (c == ']') {
+			fprintf(stderr, "Error: This is the worst scene file EVER.\n");
+			fclose(json);
+			return -1;
+		}
+		if (c == '{') {
+			skip_ws(json);
 
-      // Parse the object
-      char* key = next_string(json);
-      if (strcmp(key, "type") != 0) {
-        fprintf(stderr, "Error: Expected \"type\" key\n");
-        exit(1);
-      }
+			// Parse the object
+			char* key = next_string(json);
+			if (strcmp(key, "type") != 0) {
+				fprintf(stderr, "Error: Expected \"type\" key\n");
+				exit(1);
+			}
 
-      skip_ws(json);
+			skip_ws(json);
+			expect_c(json, ':');
+			skip_ws(json);
 
-      expect_c(json, ':');
+			char* value = next_string(json);
 
-      skip_ws(json);
+			//extract the object type
+			if (strcmp(value, "sphere") == 0) {
+				scene[obj_num].kind = 1;
+			} else if (strcmp(value, "plane") == 0) {
+				scene[obj_num].kind = 2;
+			} else if (strcmp(value, "camera") == 0) {
+				scene[obj_num].kind = 3;
+			} else if (strcmp(value, "light") == 0) {
+				scene[obj_num].kind = 4;
+			} else {
+				fprintf(stderr, "Error: Unknown type, \"%s\"\n", value);
+				exit(1);
+			}
 
-      char* value = next_string(json);
+			skip_ws(json);
 
-      //extract the object type
-	  if (strcmp(value, "sphere") == 0) {
-        scene[obj_num].kind = 1;
-      } else if (strcmp(value, "plane") == 0) {
-        scene[obj_num].kind = 2;
-      } else if (strcmp(value, "camera") == 0) {
-        scene[obj_num].kind = 3;
-      } else if (strcmp(value, "light") == 0) {
-        scene[obj_num].kind = 4;
-      } else {
-        fprintf(stderr, "Error: Unknown type, \"%s\"\n", value);
-        exit(1);
-      }
+			//extract any other fields
+			while (1) {
+				// , }
+				c = next_c(json);
+				if (c == '}') {
+					// stop parsing this object
+					break;
+				}
+				else if (c == ',') {
+					// read another field
+					skip_ws(json);
+					char* key = next_string(json);
+					skip_ws(json);
+					expect_c(json, ':');
+					skip_ws(json);
 
-      skip_ws(json);
+					//check the object type, and insert into the appropriate fields
+					if (scene[obj_num].kind == 3){
+						if (strcmp(key, "width") == 0){
+							double value = next_number(json);              
+							memcpy(&scene[obj_num].camera.width, &value, sizeof(double));  
+						} else if (strcmp(key, "height") == 0){
+							double value = next_number(json);
+							scene[obj_num].camera.height = value;
+							memcpy(&scene[obj_num].camera.height, &value, sizeof(double));
+						} else {
+							fprintf(stderr, "Error: Unrecognized field \"%s\" for 'camera'.\n.", key);
+							exit(1);
+						}
+					} else if (scene[obj_num].kind == 1){
+						if (strcmp(key, "diffuse_color") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].diffuse_color, value, sizeof(double)*3);
+						} else if (strcmp(key, "specular_color") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].specular_color, value, sizeof(double)*3);
+						} else if (strcmp(key, "radius") == 0){
+							scene[obj_num].sphere.radius = next_number(json);
+						} else if (strcmp(key, "reflectivity") == 0){
+							scene[obj_num].reflectivity = next_number(json);
+						} else if (strcmp(key, "refractivity") == 0){
+							scene[obj_num].refractivity = next_number(json);
+						} else if (strcmp(key, "ior") == 0){
+							scene[obj_num].ior = next_number(json);
+						} else if (strcmp(key, "position") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].sphere.center, value, sizeof(double)*3);
+						} else{
+							fprintf(stderr, "Error: Unrecognized field \"%s\" for 'sphere'.\n.", key);
+							exit(1);
+						}
+					} else if (scene[obj_num].kind == 2){
+						if (strcmp(key, "width") == 0){
+							scene[obj_num].plane.width = next_number(json);
+						} else if (strcmp(key, "height") == 0){
+							scene[obj_num].plane.height = next_number(json);
+						} else if (strcmp(key, "reflectivity") == 0){
+							scene[obj_num].reflectivity = next_number(json);
+						} else if (strcmp(key, "refractivity") == 0){
+							scene[obj_num].refractivity = next_number(json);
+						} else if (strcmp(key, "ior") == 0){
+							scene[obj_num].ior = next_number(json);
+						} else if (strcmp(key, "diffuse_color") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].diffuse_color, value, sizeof(double)*3);
+						} else if (strcmp(key, "specular_color") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].specular_color, value, sizeof(double)*3);
+						} else if (strcmp(key, "position") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].plane.center, value, sizeof(double)*3);
+						} else if (strcmp(key, "normal") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].plane.normal, value, sizeof(double)*3);
+						} else{
+							fprintf(stderr, "Error: Unrecognized field \"%s\" for 'plane'.\n.", key);
+							exit(1);
+						}
+					} else if (scene[obj_num].kind == 4){
+						if (strcmp(key, "color") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].light.color, value, sizeof(double)*3);
+						} else if (strcmp(key, "position") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].light.center, value, sizeof(double)*3);
+						} else if (strcmp(key, "direction") == 0){
+							double* value = next_vector(json);
+							memcpy(&scene[obj_num].light.direction, value, sizeof(double)*3);
+						} else if (strcmp(key, "theta") == 0){
+							scene[obj_num].light.theta = next_number(json);
+						} else if (strcmp(key, "radial-a2") == 0){
+							scene[obj_num].light.radial_a2 = next_number(json);
+						} else if (strcmp(key, "radial-a1") == 0){
+							scene[obj_num].light.radial_a1 = next_number(json);
+						} else if (strcmp(key, "radial-a0") == 0){
+							scene[obj_num].light.radial_a0 = next_number(json);
+						} else if (strcmp(key, "angular-a0") == 0){
+							scene[obj_num].light.angular_a0 = next_number(json);    
+						} else{
+							fprintf(stderr, "Error: Unrecognized field \"%s\" for 'light'.\n.", key);
+							exit(1);
+						}
+					}
+				}
+				skip_ws(json);
+			}
+		obj_num++;
+		}
+		skip_ws(json);
+		c = next_c(json);
+		
+		// Check if end of object or end of json file
+		if (c == ',') {
+			skip_ws(json);
+		} else if (c == ']') {
+			fclose(json);
+			return obj_num;
+		} else {
+			fprintf(stderr, "Error: Expecting ',' or ']'.\n");
+			exit(1);
+		}
+	}
 
-      //extract any other fields
-      while (1) {
-        // , }
-        c = next_c(json);
-        if (c == '}') {
-          // stop parsing this object
-          break;
-        }
-        else if (c == ',') {
-          // read another field
-          skip_ws(json);
-          char* key = next_string(json);
-          skip_ws(json);
-          expect_c(json, ':');
-          skip_ws(json);
-
-          //check the object type, and insert into the appropriate fields
-          if (scene[obj_num].kind == 3){
-            if (strcmp(key, "width") == 0){
-              double value = next_number(json);              
-              memcpy(&scene[obj_num].camera.width, &value, sizeof(double));  
-            }else if (strcmp(key, "height") == 0){
-              double value = next_number(json);
-              scene[obj_num].camera.height = value;
-              memcpy(&scene[obj_num].camera.height, &value, sizeof(double));
-            }else{
-              fprintf(stderr, "Error: Unrecognized field \"%s\" for 'camera'.\n.", key);
-              exit(1);
-            }
-          }
-          else if (scene[obj_num].kind == 1){
-            if (strcmp(key, "diffuse_color") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].diffuse_color, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "specular_color") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].specular_color, value, sizeof(double)*3);
-            }            
-            else if (strcmp(key, "radius") == 0)
-              scene[obj_num].sphere.radius = next_number(json);
-            else if (strcmp(key, "reflectivity") == 0)
-              scene[obj_num].reflectivity = next_number(json);
-            else if (strcmp(key, "refractivity") == 0)
-              scene[obj_num].refractivity = next_number(json);
-            else if (strcmp(key, "ior") == 0)
-              scene[obj_num].ior = next_number(json);
-            else if (strcmp(key, "position") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].sphere.center, value, sizeof(double)*3);
-            }
-            else{
-              fprintf(stderr, "Error: Unrecognized field \"%s\" for 'sphere'.\n.", key);
-              exit(1);
-            }
-          }
-          else if (scene[obj_num].kind == 2){
-            if (strcmp(key, "width") == 0)
-              scene[obj_num].plane.width = next_number(json);
-            else if (strcmp(key, "height") == 0)
-              scene[obj_num].plane.height = next_number(json);
-            else if (strcmp(key, "reflectivity") == 0)
-              scene[obj_num].reflectivity = next_number(json);
-            else if (strcmp(key, "refractivity") == 0)
-              scene[obj_num].refractivity = next_number(json);
-            else if (strcmp(key, "ior") == 0)
-              scene[obj_num].ior = next_number(json);
-            else if (strcmp(key, "diffuse_color") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].diffuse_color, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "specular_color") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].specular_color, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "position") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].plane.center, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "normal") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].plane.normal, value, sizeof(double)*3);
-            }
-            else{
-              fprintf(stderr, "Error: Unrecognized field \"%s\" for 'plane'.\n.", key);
-              exit(1);
-            }
-          }
-          else if (scene[obj_num].kind == 4){
-            if (strcmp(key, "color") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].light.color, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "position") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].light.center, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "direction") == 0){
-              double* value = next_vector(json);
-              memcpy(&scene[obj_num].light.direction, value, sizeof(double)*3);
-            }
-            else if (strcmp(key, "theta") == 0)
-              scene[obj_num].light.theta = next_number(json);            
-            else if (strcmp(key, "radial-a2") == 0)
-              scene[obj_num].light.radial_a2 = next_number(json);
-            else if (strcmp(key, "radial-a1") == 0)
-              scene[obj_num].light.radial_a1 = next_number(json);
-            else if (strcmp(key, "radial-a0") == 0)
-              scene[obj_num].light.radial_a0 = next_number(json);
-            else if (strcmp(key, "angular-a0") == 0)
-              scene[obj_num].light.angular_a0 = next_number(json);                                                 
-            else{
-              fprintf(stderr, "Error: Unrecognized field \"%s\" for 'light'.\n.", key);
-              exit(1);
-            }
-          }          
-        }
-        skip_ws(json);
-      }
-      obj_num++;
-    }
-    skip_ws(json);
-    c = next_c(json);
-	
-    // Check if end of object or end of json file
-    if (c == ',') {
-      skip_ws(json);
-    }
-    else if (c == ']') {
-      fclose(json);
-      return obj_num;
-    }
-    else {
-      fprintf(stderr, "Error: Expecting ',' or ']'.\n");
-      exit(1);
-    }
-  }
-
-  // Return count of parsed objects
-  return obj_num;
+	// Return count of parsed objects
+	return obj_num;
 }
 
 // Main raycast method that will check for collisions and populate pixels into a buffer
 int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
-  printf("raycast entered\n");
-  // Initialize camera and its values
-  double cx = 0;
-  double cy = 0;
-  double h = scene[0].camera.height;
-  double w = scene[0].camera.width;
+	printf("raycast entered\n");
+	// Initialize camera and its values
+	double cx = 0;
+	double cy = 0;
+	double h = scene[0].camera.height;
+	double w = scene[0].camera.width;
 
-  int M = width;
-  int N = height;
+	// These will be the dimensions of the image
+	int M = width;
+	int N = height;
+	
+	double pixheight = h / M;
+	double pixwidth = w / N;
+	printf("\nM:%d N:%d h:%d w:%d pH:%lf pW:%lf\n", M, N, h, w, pixheight, pixwidth);
 
-  double pixheight = h / M;
-  double pixwidth = w / N;
-  printf("\nM:%d N:%d h:%d w:%d pH:%lf pW:%lf\n", M, N, h, w, pixheight, pixwidth);
+	int current_pixel = 0;
+	int testpixel = 0;
+	for (int y = 0; y < N; y += 1) {
+		for (int x = 0; x < M; x += 1) {
+		  double Ro[3] = { 0, 0, 0 };
+		  double Rd[3] = {
+			cx - (w / 2) + pixwidth * (x + 0.5),
+			cy - (h / 2) + pixheight * (y + 0.5),
+			1
+		  };
+		  double best_t;
+		  int best_obj;
+		  shoot_ray(scene, num_objects, Ro, Rd, &best_t, &best_obj);
 
-  int current_pixel = 0;
-  int testpixel = 0;
-  for (int y = 0; y < N; y += 1) {
-    for (int x = 0; x < M; x += 1) {
-      double Ro[3] = { 0, 0, 0 };
-      double Rd[3] = {
-        cx - (w / 2) + pixwidth * (x + 0.5),
-        cy - (h / 2) + pixheight * (y + 0.5),
-        1
-      };
-      double best_t;
-      int best_obj;
-      shoot_ray(scene, num_objects, Ro, Rd, &best_t, &best_obj);
+		
+		  Pixel pix;
+		  if (best_t > 0 && best_t != INFINITY) {
+			double color[3];
 
+			color[0] = 0;
+			color[1] = 0;
+			color[2] = 0;
 
-      Pixel pix;
-      if (best_t > 0 && best_t != INFINITY) {
-        double color[3];
+			shade_rec(scene, num_objects, best_t, best_obj, Ro, Rd, color, 1);
 
-        color[0] = 0;
-        color[1] = 0;
-        color[2] = 0;
+			pix.r = (unsigned char)clamp(color[0]*255);
+			pix.g = (unsigned char)clamp(color[1]*255);
+			pix.b = (unsigned char)clamp(color[2]*255);
+		  }
+		  else {
+			pix.r = (unsigned char)clamp(0.1);
+			pix.g = (unsigned char)clamp(0.1);
+			pix.b = (unsigned char)clamp(0.1);
+		  }
 
-        shade_rec(scene, num_objects, best_t, best_obj, Ro, Rd, color, 1);
+		  buffer[current_pixel++] = pix;
 
-        pix.r = (unsigned char)clamp(color[0]*255);
-        pix.g = (unsigned char)clamp(color[1]*255);
-        pix.b = (unsigned char)clamp(color[2]*255);
-      }
-      else {
-        pix.r = (unsigned char)clamp(0.1);
-        pix.g = (unsigned char)clamp(0.1);
-        pix.b = (unsigned char)clamp(0.1);
-      }
-
-      buffer[current_pixel++] = pix;
-
-    }
+		}
   }
 
   return 0;
