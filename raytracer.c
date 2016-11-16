@@ -1,9 +1,12 @@
-/*********************************************************************
-| Title: raycast.c
-| Author: JT Barrett
-| Assignment: CS 430 - Computer Graphics: Project 2
-| Date Completed: 10/4/2016
-\*********************************************************************/
+/* 	Jesus Garcia
+	Project 4 - Raytracing Illumination - 11/15/16
+	CS430 - Prof. Palmer
+	
+	In the previous project you will wrote code to raycast and shade mathematical primitives based
+	on a scene input file into a pixel buffer. In this project you will add recursive raytracing to
+	provide reflection and refraction"
+	
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,49 +14,189 @@
 #include <limits.h>
 #include <math.h>
 #include <ctype.h>
-#include "raycast.h"
+
+//MACROS CONSIDER DELETEING
+#define degrees_to_rad(degrees) (degrees * M_PI / 180.0)
+
+// Struct and function declarations
+
+typedef struct Object{
+  int kind; // 1,2,3,4 = sphere, plane, camera, light respectively
+  double diffuse_color[3];
+  double specular_color[3];
+  double reflectivity;
+  double refractivity;
+  double ior;
+  union {
+    struct {
+      double center[3];
+      double radius;
+    } sphere;
+    struct {
+      double center[3];
+      double width;
+      double height;
+      double normal[3];
+    } plane;
+    struct {
+      double width;
+      double height;
+    } camera;
+    struct light{
+      double center[3];
+      double color[3];
+      double direction[3];
+      double theta;
+      double radial_a2;
+      double radial_a1;
+      double radial_a0;
+      double angular_a0;
+    } light;
+  };
+} Object;
+
+typedef struct dPixel{
+  double r,g,b;
+} dPixel;
+
+typedef struct Pixel{
+  unsigned char r,g,b;
+} Pixel;
+
+typedef Object Scene[128];
+//Main method prototypes
+int read_scene(char* json, Scene scene);
+int raycast (Pixel *buffer, Scene scene, int num_objects, int width, int height);
+int ppm_output(Pixel  *buffer, char *output_file_name, int size, int depth, int width, int height);
+
+//Parser prototypes
+double* next_vector(FILE* json);
+double next_number(FILE* json);
+char* next_string(FILE* json);
+void skip_ws(FILE* json);
+void expect_c(FILE* json, int d);
+int next_c(FILE* json);
+
+//Intersect prototypes and methods
+double sphere_intersection(double* Ro, double* Rd, double* C, double r);
+double plane_intersection(double* Ro, double* Rd, double* c, double *n);
+static inline double sqr(double v) {
+  return v*v;
+}
+
+void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t, int *o);
+void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o);
+void shade_rec(Object *sceneRef, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level);
+
+
+typedef double* V3;
+
+static inline void v3_add(V3 a, V3 b, V3 c){
+  c[0] = a[0] + b[0];
+  c[1] = a[1] + b[1];
+  c[2] = a[2] + b[2];
+}
+
+static inline void v3_sub(V3 a, V3 b, V3 c){
+  c[0] = a[0] - b[0];
+  c[1] = a[1] - b[1];
+  c[2] = a[2] - b[2];
+}
+
+static inline void v3_scale(V3 a, double s, V3 c){
+  c[0] = s * a[0];
+  c[1] = s * a[1];
+  c[2] = s * a[2];  
+}
+
+static inline double v3_dot(V3 a, V3 b){
+  return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+}
+
+static inline void v3_cross(V3 a, V3 b, V3 c){
+  c[0] = a[1] * b[2] - a[2] * b[1];
+  c[1] = a[2] * b[0] - a[0] * b[2];
+  c[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+static inline void v3_normalize(double* v) {
+  double len = sqrt(sqr(v[0]) + sqr(v[1]) + sqr(v[2]));
+  v[0] /= len;
+  v[1] /= len;
+  v[2] /= len;
+}
+
+static inline void v3_reflect(V3 A, V3 N, V3 C){
+  double q = 2*v3_dot(A, N);
+  double rscale[3];
+  v3_scale(N, q, rscale);
+  v3_sub(A, rscale, C);
+  v3_normalize(C);
+}
+
+static inline double v3_mag(double* v){
+  double d = (double)sqrt(sqr(v[0]) + sqr(v[1]) + sqr(v[2]));
+  return d;
+}
+
+static inline int clamp(double d){
+  int final;
+  if (d > 255.0) final = 255;
+  else if (d < 0.0) final = 0;
+  else final = floor(d);
+  return final;
+}
+
+static inline double distance(V3 Ro, V3 p){
+  return sqrt(sqr(Ro[0] - p[0]) + sqr(Ro[1] - p[1]) + sqr(Ro[2] - p[2]));
+}
+
+static inline double frad(double a0, double a1, double a2, double dl){
+  return 1/(a2*sqr(dl) + a1*dl + a0);
+}
+
+static inline double fang(V3 Rd, V3 Ld, double theta, double a0){
+  v3_normalize(Rd);
+  v3_normalize(Ld);
+  if(theta == 0)  
+    return 1;
+  double l_theta = v3_dot(Ld, Rd);
+  if (acos(l_theta) > theta)
+    return 0;
+  else{
+    return pow(l_theta, a0);
+  }
+}
+
+static inline double deg_to_rad(double deg){
+  double d = deg * M_PI / 180.0;
+  return d;
+} 
+
+int errCheck(int argc, char *argv[]);
 
 int main(int argc, char* argv[]){
-  //Uncomment debugging prints for more information
+  
+  errCheck(argc, argv);
 
-  if (argc != EXPECTED_ARGS){
-    fprintf(stderr, "Error: The program was not passed the correct number of arguments.\n");
-    return 1;
-  }
-
-  //Create the scene of objects and parse the json file into it
+  // Initialize scene
   Object *scene = malloc(sizeof(Object)*128);
+
+  // Populate scene by parsing json
   int num_objects = read_scene(argv[3], scene);
 
-  //Take the scene and do the raycasting to generate a pixel buffer
-  
+  // Create the pixel buffer and populate it
+  // Store the desired picture height and width
   int width = atoi(argv[1]);
   int height = atoi(argv[2]);
-  //if (width > 300 || height > 300){
-   // fprintf(stderr, "Error: This program cannot handle images that large.\n");
-   // return 1;
-  //}
   Pixel pixbuffer[width*height];
   raycast(pixbuffer, scene, num_objects, width, height);
 
-  //Take the pixel buffer and write it as a valid ppm file.
+  // Write a PPM based on pixel buffer data
   ppm_output(pixbuffer, argv[4], sizeof(Pixel)*(width*height), 255, width, height);
-
-    //printf("\nNumber of Objects: %d\n", num_objects);
-
-  /*for (int i = 0; i < PIXELS_M*PIXELS_N*3; i++)
-    printf("%d ", pixbuffer[i]);
-  */
-
-  //printf("\nCamera Info: %d\n %lf %lf", scene[0].kind, scene[0].camera.width, scene[0].camera.height);
-
   return 0;
 }
 
-
-/**********************
-|Main Methods
-\*********************/
 int read_scene(char* json_input, Scene scene){
   int c;
   FILE* json = fopen(json_input, "r");
@@ -66,7 +209,6 @@ int read_scene(char* json_input, Scene scene){
 
   // Find the beginning of the list
   expect_c(json, '[');
-
   skip_ws(json);
 
   // Find the objects
@@ -98,23 +240,15 @@ int read_scene(char* json_input, Scene scene){
       char* value = next_string(json);
 
       //extract the object type
-      if (strcmp(value, "camera") == 0) {
-        scene[obj_num].kind = 3;
-        //printf("||Camera Recognized||\n");
-      }
-      else if (strcmp(value, "sphere") == 0) {
+	  if (strcmp(value, "sphere") == 0) {
         scene[obj_num].kind = 1;
-        //printf("||Sphere Recognized||\n");
-      }
-      else if (strcmp(value, "plane") == 0) {
+      } else if (strcmp(value, "plane") == 0) {
         scene[obj_num].kind = 2;
-        //printf("||Plane Recognized||\n");
-      }
-      else if (strcmp(value, "light") == 0) {
+      } else if (strcmp(value, "camera") == 0) {
+        scene[obj_num].kind = 3;
+      } else if (strcmp(value, "light") == 0) {
         scene[obj_num].kind = 4;
-        //printf("||Plane Recognized||\n");
-      }
-      else {
+      } else {
         fprintf(stderr, "Error: Unknown type, \"%s\"\n", value);
         exit(1);
       }
@@ -240,19 +374,13 @@ int read_scene(char* json_input, Scene scene){
         }
         skip_ws(json);
       }
-
-      //printf("--New Object Loaded--\n");
       obj_num++;
-      /*else {
-        fprintf(stderr, "Error: Unexpected value\n");
-        exit(1);
-      }*/
     }
     skip_ws(json);
     c = next_c(json);
-    //check if end of object or end of json file
+	
+    // Check if end of object or end of json file
     if (c == ',') {
-      // noop
       skip_ws(json);
     }
     else if (c == ']') {
@@ -265,21 +393,19 @@ int read_scene(char* json_input, Scene scene){
     }
   }
 
-  //return how many objects were parsed
+  // Return count of parsed objects
   return obj_num;
 }
 
-// This method creates the viewplane and loops through each object checking for colisions for each ray
-// Each ray is then converted to a pixel on the screen and placed into a pixel array for PPM output.
+// Main raycast method that will check for collisions and populate pixels into a buffer
 int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
   printf("raycast entered\n");
-  //camera starts at 0, load in camera dimensions
+  // Initialize camera and its values
   double cx = 0;
   double cy = 0;
   double h = scene[0].camera.height;
   double w = scene[0].camera.width;
 
-  //set the image dimensions
   int M = width;
   int N = height;
 
@@ -292,7 +418,6 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
   for (int y = 0; y < N; y += 1) {
     for (int x = 0; x < M; x += 1) {
       double Ro[3] = { 0, 0, 0 };
-      // Rd = normalize(P - Ro)
       double Rd[3] = {
         cx - (w / 2) + pixwidth * (x + 0.5),
         cy - (h / 2) + pixheight * (y + 0.5),
@@ -303,12 +428,10 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
       shoot_ray(scene, num_objects, Ro, Rd, &best_t, &best_obj);
 
 
-      //Initialize a pixel and convert the scene's 0.0-1.0 color to 0-255 color
       Pixel pix;
       if (best_t > 0 && best_t != INFINITY) {
         double color[3];
 
-        //initialize color as black
         color[0] = 0;
         color[1] = 0;
         color[2] = 0;
@@ -320,14 +443,11 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
         pix.b = (unsigned char)clamp(color[2]*255);
       }
       else {
-        //eigengrau
-        pix.r = (unsigned char)clamp(0.086);
-        pix.g = (unsigned char)clamp(0.086);
-        pix.b = (unsigned char)clamp(0.114);
-        //printf(".");
+        pix.r = (unsigned char)clamp(0.1);
+        pix.g = (unsigned char)clamp(0.1);
+        pix.b = (unsigned char)clamp(0.1);
       }
 
-      //load the pixel data into the pixel buffer
       buffer[current_pixel++] = pix;
 
     }
@@ -336,10 +456,8 @@ int raycast(Pixel *buffer, Scene scene, int num_objects, int width, int height){
   return 0;
 }
 
-//This method takes an array of color values as integers and writes them to a PPM P3 file.
 int ppm_output(Pixel *buffer, char *output_file_name, int size, int depth, int width, int height){
   printf("\nppm_output entered\n");
-  // Attempt to open outfile
   FILE *output_file;
   output_file = fopen(output_file_name, "w");
   if (!output_file)
@@ -350,9 +468,7 @@ int ppm_output(Pixel *buffer, char *output_file_name, int size, int depth, int w
   }
 
   else {
-    //Write the PPM P3 header
     fprintf(output_file, "P3\n%d %d\n%d\n", width, height, depth);
-    //Append pixel data onto the rest of the file BACKWARDS, the image is upside down!
       for (int i = width-1; i >=0; i--)
       {
         for (int j = 0; j<height; j++)
@@ -361,20 +477,49 @@ int ppm_output(Pixel *buffer, char *output_file_name, int size, int depth, int w
           fprintf(output_file, "%d ", buffer[(i*width)+j].g);
           fprintf(output_file, "%d ", buffer[(i*width)+j].b);
         }
-        // Add newline after each line
         fprintf(output_file, "\n");
       }
   }
-
-  //close up the output file
+  
   fclose(output_file);
   return 0;
 }
 
+// Error checking function to minimize code in main()
+int errCheck(int args, char *argv[]){
+	
+	// Initial check to see if there are 3 input arguments on launch
+	if ((args != 5) || (strlen(argv[3]) <= 5) || (strlen(argv[4]) <= 4)) {
+		fprintf(stderr, "Error: Program requires usage: 'raytracer width height input.json output.ppm'");
+		exit(1);
+	}
 
-/**********************
-|Parser Methods
-\*********************/
+	// Check the file extension of input and output files
+	char *extIn;
+	char *extOut;
+	if(strrchr(argv[3],'.') != NULL){
+		extIn = strrchr(argv[3],'.');
+	}
+	if(strrchr(argv[4],'.') != NULL){
+		extOut = strrchr(argv[4],'.');
+	}
+	
+	// Check to see if the inputfile is in .ppm format
+	if(strcmp(extIn, ".json") != 0){
+		printf("Error: Input file not a json");
+		exit(1);
+	}
+	
+	// Check to see if the outputfile is in .ppm format
+	if(strcmp(extOut, ".ppm") != 0){
+		printf("Error: Output file not a PPM");
+		exit(1);
+	}
+
+	return(0);
+}
+
+
 double* next_vector(FILE* json){
   double* v = malloc(3 * sizeof(double));
   expect_c(json, '[');
@@ -395,7 +540,6 @@ double* next_vector(FILE* json){
 double next_number(FILE* json){
   double value;
   fscanf(json, "%lf", &value);
-  // Error check this..
   return value;
 }
 char* next_string(FILE* json){
@@ -453,9 +597,6 @@ int next_c(FILE* json){
 }
 
 
-/**********************
-|Intersect Methods
-\*********************/
 double sphere_intersection(double* Ro, double* Rd, double* C, double r){
   double a = (sqr(Rd[0]) + sqr(Rd[1]) + sqr(Rd[2]));
   double b = (2 * (Ro[0] * Rd[0] - Rd[0] * C[0] + Ro[1] * Rd[1] - Rd[1] * C[1] + Ro[2] * Rd[2] - Rd[2] * C[2]));
@@ -492,13 +633,11 @@ double plane_intersection(double* Ro, double* Rd, double* c, double *n){
 void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t, int *o){
   v3_normalize(Rd);
 
-  //initialize variables for closest colision, then loop over objects looking for colisions
   double best_t = INFINITY;
   int best_obj = 0;
   for (int i = 1; i < num_objects; i += 1) {
     double t = 0;
 
-    //check object type and send to appropriate colision check
     switch (scene[i].kind) {
     case 1:
       t = sphere_intersection(Ro, Rd, scene[i].sphere.center, scene[i].sphere.radius);
@@ -507,14 +646,12 @@ void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t
       t = plane_intersection(Ro, Rd, scene[i].plane.center, scene[i].plane.normal);
       break;
     case 4:
-      //it's a light do nothing
       break;
     default:
       fprintf(stderr, "Error: Unrecognized object in scene\n");
       exit(1);
     }
 
-    //set closest colision variables
     if (t > 0 && t < best_t){
       best_t = t;
       best_obj = i;
@@ -527,11 +664,9 @@ void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t
 void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o){
   v3_normalize(Rd);
 
-  //initialize variables for closest colision, then loop over objects looking for colisions
   double best_t_shadow = INFINITY;
   int best_obj_shadow = 0;
   for (int k=1; k < num_objects ; k += 1){
-    //carful, origin not at 0
     if (k != best_obj){
       double t_shadow = 0;
       switch(scene[k].kind){
@@ -561,11 +696,6 @@ void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, 
 
 void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level){
 
-  //if (level == 2) printf("\nnum_obj: %d || rec_t: %lf || rect_obj: %d || Ron:[%lf, %lf, %lf] || refl_Rd:[%lf, %lf, %lf] || refl_color:[%lf, %lf, %lf] || level: %d"
-  // , num_objects, best_t, best_obj, Ro[0], Ro[1], Ro[2], Rd[0], Rd[1], Rd[2], color[0], color[1], color[2], level);
-  //loop over lights adding lighting elements to the color
-
-  //f (level = 2) printf("[%lf, %lf, %lf] Ro: level 2 init", Ro[0], Ro[1], Ro[2]);
   for (int i = 1; i < num_objects; i += 1) {
     if(scene[i].kind != 4) 
       continue;
@@ -573,7 +703,6 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
     double Rdn[3];
     double Ron_temp[3];
 
-    //cast a ray from intersection to light, if there is no object in the way add specular color
     v3_scale(Rd, best_t, Ron_temp);
     v3_add(Ron_temp, Ro, Ron);
     v3_sub(scene[i].light.center, Ron, Rdn);
@@ -588,14 +717,9 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
     int best_obj_shadow;
     shoot_ray_shadow(scene, num_objects, best_obj, Ron, Rdn, &best_t_shadow, &best_obj_shadow);
 
-    //make sure to check that light obstruction is in front of the light
     if (best_t_shadow > 0 && best_t_shadow != INFINITY && best_t_shadow < dist ) {
-      //Do nothing!
     }
     else{
-      // no object was in the way
-      // N, L, R, V
-      // Set up needed vectors
       double N[3], L[3], R[3], V[3];
 
       if(scene[best_obj].kind == 2)
@@ -605,16 +729,14 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
       v3_normalize(N);
 
       v3_sub(scene[i].light.center, Ron, L);
-      v3_normalize(L); //light_position - Ron;
+      v3_normalize(L);
 
-      //r=L−2(L DOT n)n
       v3_reflect(L, N, R);
 
       memcpy(V, Rd, sizeof(double)*3);
       v3_scale(V, -1.0, V);
       v3_normalize(V);
 
-      //Populate the diffuse component
       double diff_nl = v3_dot(N, L);
       double diff[3];
         diff[0] = scene[best_obj].diffuse_color[0]*scene[i].light.color[0];
@@ -622,7 +744,6 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
         diff[2] = scene[best_obj].diffuse_color[2]*scene[i].light.color[2];
         v3_scale(diff, diff_nl, diff);  
 
-      //Populate the specular component
       double spec_vr = -1*v3_dot(V, R);
       double spec[3];
       if(spec_vr > 0){
@@ -636,7 +757,6 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
         spec[2] = 0;
       }
 
-      //account for angular and radial attinuation and add diffuse + specular to finish color processing
       double rad_a = frad(scene[i].light.radial_a0, scene[i].light.radial_a1, scene[i].light.radial_a2, dist);
       double ang_a;
       if(scene[i].light.theta != 0){
@@ -644,38 +764,30 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
       }
       else
         ang_a = 1;
-      //printf("|| %lf ||", ang_a);
-      //if (level >1) printf("\n[%lf, %lf] d:[%lf, %lf, %lf] s:[%lf, %lf, %lf]", rad_a, ang_a, diff[0], diff[1], diff[2], spec[0], spec[1], spec[2]);
-      color[0] += rad_a * ang_a * (diff[0] + spec[0]);
-      color[1] += rad_a * ang_a * (diff[1] + spec[1]); //*fang * frad
+
+	  color[0] += rad_a * ang_a * (diff[0] + spec[0]);
+      color[1] += rad_a * ang_a * (diff[1] + spec[1]);
       color[2] += rad_a * ang_a * (diff[2] + spec[2]);
 
-      //if (level >1) printf("[%lf, %lf, %lf]", color[0], color[1], color[2]);
-
-      //printf("\nRon:[%lf, %lf, %lf] level: %d init", Ron[0], Ron[1], Ron[2], level);
-      if (level < MAX_REC) {
+      if (level < 2) {
         
         if(scene[best_obj].reflectivity > 0){
           double refl_ray[3];
           v3_reflect(Rd, N, refl_ray);
-          //printf("ref: [%lf, %lf, %lf] ", refl_ray[0], refl_ray[1], refl_ray[2]);
-
           double rec_t = INFINITY;
+
+
           int rec_obj;
           shoot_ray(scene, num_objects, Ron, refl_ray, &rec_t, &rec_obj);
-          //printf("\nRon:[%lf, %lf, %lf]", Ron[0], Ron[1], Ron[2]);
 
 
           double refl_color[3] = {0, 0, 0};
           
-          //if (rec_t != INFINITY) printf("\nnum_obj: %d || best_t: %lf || best_obj: %d || Ro:[%lf, %lf, %lf] || Rd:[%lf, %lf, %lf] || color:[%lf, %lf, %lf] || level: 1 ", num_objects, best_t, best_obj, Ro[0], Ro[1], Ro[2], Rd[0], Rd[1], Rd[2], color[0], color[1], color[2]);
           
           if (rec_t != INFINITY) shade_rec(scene, num_objects, rec_t, rec_obj, Ron, refl_ray, refl_color, level + 1);
-          //shoot_rec(Ron, refl_ray, sceneRef, &reflectionColor, depth + 1, NULL);
-          //(Object *scene, int num_objects, double best_t, int best_obj, double *Ro, double *Rd, double *color, int level)
-          //printf(" c:[%lf, %lf, %lf] r:[%lf, %lf, %lf] ||", color[0], color[1], color[2], refl_color[0], refl_color[1], refl_color[2]);
+
           v3_scale(refl_color, scene[best_obj].reflectivity, refl_color);
-          //printf("[%lf, %lf, %lf]", refl_color[0], refl_color[1], refl_color[2]);
+
           v3_add(refl_color, color, color);
         }
         if(scene[best_obj].refractivity > 0){
