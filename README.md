@@ -4,6 +4,7 @@ on a scene input file into a pixel buffer. In this project you will add recursiv
 provide reflection and refraction.
 
 Some black pixels will be scattered along the shapes, minor issue
+Makefile doesn't work, included .exe
 
 Compile with:
 gcc raytracer.c -o raytracer
