@@ -3,3 +3,4 @@ In the previous project you will wrote code to raycast and shade mathematical pr
 on a scene input file into a pixel buffer. In this project you will add recursive raytracing to
 provide reflection and refraction.
 
+Some black pixels will be scattered along the shapes, minor issue
