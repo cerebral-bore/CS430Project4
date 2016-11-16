@@ -4,3 +4,9 @@ on a scene input file into a pixel buffer. In this project you will add recursiv
 provide reflection and refraction.
 
 Some black pixels will be scattered along the shapes, minor issue
+
+Compile with:
+gcc raytracer.c -o raytracer
+
+Usage:
+raytracer [width] [height] input.json output.ppm
