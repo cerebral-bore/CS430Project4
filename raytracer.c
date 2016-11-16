@@ -8,12 +8,12 @@
 	
 */
 
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <ctype.h>
 #include <limits.h>
 #include <math.h>
-#include <ctype.h>
 
 // Struct and function declarations
 
@@ -23,7 +23,7 @@ typedef struct Object{
 	double specular_color[3];
 	double reflectivity;
 	double refractivity;
-	double ior;
+	double ior; // Index of Refraction
 	union {
 		struct {
 			double center[3];
@@ -156,28 +156,6 @@ static inline double fang(V3 Rd, V3 Ld, double theta, double a0){
 	} else{
 		return pow(l_theta, a0);
 	}
-}
-
-int main(int argc, char* argv[]){
-  
-	errCheck(argc, argv);
-
-	// Initialize scene
-	Object *scene = malloc(sizeof(Object)*128);
-
-	// Populate scene by parsing json
-	int num_objects = read_scene(argv[3], scene);
-
-	// Create the pixel buffer and populate it
-	// Store the desired picture height and width
-	int width = atoi(argv[1]);
-	int height = atoi(argv[2]);
-	Pixel pixbuffer[width*height];
-	raytrace(pixbuffer, scene, num_objects, width, height);
-
-	// Write a PPM based on pixel buffer data
-	ppm_output(pixbuffer, argv[4], sizeof(Pixel)*(width*height), 255, width, height);
-	return 0;
 }
 
 int read_scene(char* json_input, Scene scene){
@@ -363,35 +341,28 @@ int read_scene(char* json_input, Scene scene){
 	return obj_num;
 }
 
-// Main raycast method that will check for collisions and populate pixels into a buffer
+// Main raytrace method that will check for collisions and populate pixels into a buffer
 int raytrace(Pixel *buffer, Scene scene, int num_objects, int width, int height){
-	printf("raytrace entered\n");
 	// Initialize camera and its values
 	double cx = 0;
 	double cy = 0;
-	double h = scene[0].camera.height;
-	double w = scene[0].camera.width;
-
-	// These will be the dimensions of the image
-	int M = width;
-	int N = height;
 	
-	double pixheight = h / M;
-	double pixwidth = w / N;
-	printf("\nM:%d N:%d h:%d w:%d pH:%lf pW:%lf\n", M, N, h, w, pixheight, pixwidth);
+	double pixheight = scene[0].camera.height / width;
+	double pixwidth = scene[0].camera.width / height;
 
 	int current_pixel = 0;
 	int testpixel = 0;
-	for (int y = 0; y < N; y += 1) {
-		for (int x = 0; x < M; x += 1) {
+	for (int y = 0; y < height; y += 1) {
+		for (int x = 0; x < width; x += 1) {
 			double Ro[3] = { 0, 0, 0 };
 			double Rd[3] = {
-				cx - (w / 2) + pixwidth * (x + 0.5),
-				cy - (h / 2) + pixheight * (y + 0.5), 1 };
+				cx - (scene[0].camera.width / 2) + pixwidth * (x + 0.5),
+				cy - (scene[0].camera.height / 2) + pixheight * (y + 0.5), 1 };
 			double best_t;
 			int best_obj;
 			shoot_ray(scene, num_objects, Ro, Rd, &best_t, &best_obj);
 			
+			// Create a pixel and constrain its color values to 0-1.0
 			Pixel pix;
 			if (best_t > 0 && best_t != INFINITY) {
 				double color[3];
@@ -406,19 +377,19 @@ int raytrace(Pixel *buffer, Scene scene, int num_objects, int width, int height)
 				pix.g = (unsigned char)clamp(color[1]*255);
 				pix.b = (unsigned char)clamp(color[2]*255);
 			} else {
-				pix.r = (unsigned char)clamp(0.1);
-				pix.g = (unsigned char)clamp(0.1);
-				pix.b = (unsigned char)clamp(0.1);
+				pix.r = (unsigned char)clamp(0.0);
+				pix.g = (unsigned char)clamp(0.0);
+				pix.b = (unsigned char)clamp(0.0);
 			}
-
+			// Store the pixel inside the pixel buffer
 			buffer[current_pixel++] = pix;
 		}
 	}
 	return 0;
 }
 
+// Function to output to a P3 ppm file
 int ppm_output(Pixel *buffer, char *output_file_name, int size, int depth, int width, int height){
-	printf("\nppm_output entered\n");
 	FILE *output_file;
 	output_file = fopen(output_file_name, "w");
 	if (!output_file){
@@ -475,7 +446,7 @@ int errCheck(int args, char *argv[]){
 	return(0);
 }
 
-
+// Some given parser functions
 double* next_vector(FILE* json){
 	double* v = malloc(3 * sizeof(double));
 	expect_c(json, '[');
@@ -554,7 +525,7 @@ int next_c(FILE* json){
 	return c;
 }
 
-
+// Function to check for sphere intersection
 double sphere_intersection(double* Ro, double* Rd, double* C, double r){
 	double a = (sqr(Rd[0]) + sqr(Rd[1]) + sqr(Rd[2]));
 	double b = (2 * (Ro[0] * Rd[0] - Rd[0] * C[0] + Ro[1] * Rd[1] - Rd[1] * C[1] + Ro[2] * Rd[2] - Rd[2] * C[2]));
@@ -574,6 +545,7 @@ double sphere_intersection(double* Ro, double* Rd, double* C, double r){
 	return -1;
 }
 
+// Function to check for plane intersection
 double plane_intersection(double* Ro, double* Rd, double* c, double *n){
 	v3_normalize(n);
 	v3_normalize(Rd);
@@ -589,6 +561,8 @@ double plane_intersection(double* Ro, double* Rd, double* c, double *n){
 void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t, int *o){
 	v3_normalize(Rd);
 
+	// Variables to be used for collision checking closest to camera
+	// Will loop through objects to check for all possible collisions
 	double best_t = INFINITY;
 	int best_obj = 0;
 	for (int i = 1; i < num_objects; i += 1) {
@@ -602,12 +576,14 @@ void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t
 			t = plane_intersection(Ro, Rd, scene[i].plane.center, scene[i].plane.normal);
 			break;
 		case 4:
+			// Light so ignore
+			// No case 3 as only 1 camera per scene
 			break;
 		default:
 			fprintf(stderr, "Error: Unrecognized object in scene\n");
 			exit(1);
 		}
-
+		// Store the collision closest to camera
 		if (t > 0 && t < best_t){
 			best_t = t;
 			best_obj = i;
@@ -620,6 +596,8 @@ void shoot_ray(Object *scene, int num_objects, double *Ro, double *Rd, double *t
 void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, double *Rd, double *t, int *o){
 	v3_normalize(Rd);
 
+	// Variables to be used for collision checking closest to camera
+	// Will loop through objects to check for all possible collisions
 	double best_t_shadow = INFINITY;
 	int best_obj_shadow = 0;
 	for (int k=1; k < num_objects ; k += 1){
@@ -633,6 +611,7 @@ void shoot_ray_shadow(Object *scene, int num_objects, int best_obj, double *Ro, 
 				t_shadow = plane_intersection(Ro, Rd, scene[k].plane.center, scene[k].plane.normal);
 				break;
 			case 4:
+				// As before, no light collisions and only 1 camera per scene
 				break;                
 			default:
 				fprintf(stderr, "Error: Unrecognized object in scene when looking for shadow\n");
@@ -706,6 +685,7 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
 				spec[2] = 0;
 			}
 
+			// Calls to apply radial/angular attenuations
 			double rad_a = frad(scene[i].light.radial_a0, scene[i].light.radial_a1, scene[i].light.radial_a2, dist);
 			double ang_a;
 			if(scene[i].light.theta != 0){
@@ -738,4 +718,27 @@ void shade_rec(Object *scene, int num_objects, double best_t, int best_obj, doub
 			}
 		}
 	}
+}
+
+// Throw it all together!
+int main(int argc, char* argv[]){
+  
+	errCheck(argc, argv);
+
+	// Initialize scene
+	Object *scene = malloc(sizeof(Object)*128);
+
+	// Populate scene by parsing json
+	int num_objects = read_scene(argv[3], scene);
+
+	// Create the pixel buffer and populate it
+	// Store the desired picture height and width
+	int width = atoi(argv[1]);
+	int height = atoi(argv[2]);
+	Pixel pixbuffer[width*height];
+	raytrace(pixbuffer, scene, num_objects, width, height);
+
+	// Write a PPM based on pixel buffer data
+	ppm_output(pixbuffer, argv[4], sizeof(Pixel)*(width*height), 255, width, height);
+	return 0;
 }
